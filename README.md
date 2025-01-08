@@ -1,1 +1,0 @@
-Please note that these write-ups aren't extremely polished, as they are raw notes and write-ups exported directly from my Obsidian notes while doing CTFs. Don't expect ultra-professional content—I'm still learning, just like you, and doing plenty of mistakes along the way. So please bear with the long, sometimes unnecessary steps included in the write-ups! :)
