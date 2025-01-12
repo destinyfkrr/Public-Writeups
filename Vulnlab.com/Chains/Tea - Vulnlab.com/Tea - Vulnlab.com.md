@@ -333,5 +333,3 @@ _We had to run the command multiple times and approve it to add the destiny user
 <img src="attachments/33d48f241ff66333b800ff55c571db71.png" />
 
 We were able to log in to the machine using the created user and evil-winrm to retrieve the other flags.
-
-![[Pasted image 202501121
