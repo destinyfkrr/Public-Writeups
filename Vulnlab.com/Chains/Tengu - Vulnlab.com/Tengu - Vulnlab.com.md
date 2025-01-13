@@ -17,7 +17,7 @@
 
 ---
 
-**Attack Path : **
+**Attack Path :**
 - Run an Nmap scan on the entire network and find port 1080 open on the Linux host.
 - Exploit the Node-RED application to gain command execution on the host.
 - Decrypt the configuration file credentials in Node-RED.
